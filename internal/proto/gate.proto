@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/Code-Hex/grpc-gate/internal/proto;proto";
+
+service Stream {
+  rpc ServerStream(stream Chunk) returns (stream Chunk);
+}
+  
+message Chunk {
+  bytes data = 1;
+}
