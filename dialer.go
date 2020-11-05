@@ -2,9 +2,7 @@ package gate
 
 import (
 	"context"
-	"log"
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/Code-Hex/grpc-gate/internal/proto"
@@ -22,12 +20,8 @@ type Dialer struct {
 	streamClient proto.StreamClient
 }
 
-func NewDialer(gateHost string, gatePort int) (*Dialer, error) {
-	conn, err := grpc.Dial(gateHost+":"+strconv.Itoa(gatePort),
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
-		grpc.WithTimeout(100*time.Second),
-	)
+func NewDialer(gateAddr string, opts ...grpc.DialOption) (*Dialer, error) {
+	conn, err := grpc.Dial(gateAddr, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -62,17 +56,14 @@ func (c *Conn) Read(b []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	log.Println("read:", chunk.GetData())
 	return copy(b, chunk.GetData()), nil
 }
 
 func (c *Conn) Write(b []byte) (int, error) {
-	log.Println("write:", b)
 	err := c.stream.Send(&proto.Chunk{
 		Data: b,
 	})
 	if err != nil {
-		log.Println("write:", err)
 		return 0, err
 	}
 	return len(b), nil

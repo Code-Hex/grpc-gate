@@ -3,10 +3,10 @@ package gate
 import (
 	"errors"
 	"io"
-	"log"
 	"net"
 
 	"github.com/Code-Hex/grpc-gate/internal/proto"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -23,7 +23,6 @@ type streamServer struct{}
 const bufferSize = 256 * 1024
 
 func (s *streamServer) ServerStream(ss proto.Stream_ServerStreamServer) error {
-	log.Println("called stream")
 	ctx := ss.Context()
 
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -47,73 +46,64 @@ func (s *streamServer) ServerStream(ss proto.Stream_ServerStreamServer) error {
 
 	upstreamNetwork := upstreamNetworks[0]
 	upstreamHost, upstreamPort := upstreamHosts[0], upstreamPorts[0]
-	log.Println(upstreamNetwork, net.JoinHostPort(upstreamHost, upstreamPort))
 	conn, err := net.Dial(upstreamNetwork, net.JoinHostPort(upstreamHost, upstreamPort))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
+	eg, ctx := errgroup.WithContext(ctx)
+
 	// grpc -> upstream
-	go func() {
+	eg.Go(func() error {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("grpc -> upstream ctx error", ctx.Err())
-				return
+				return ctx.Err()
 			default:
 			}
 
 			chunk, err := ss.Recv()
 			if err != nil {
 				if err == io.EOF {
-					log.Println("closed gRPC (grpc -> upstream)", err)
-					return
+					return nil
 				}
-				log.Println("grpc -> upstream error", err)
-				return
+				return err
 			}
 			if _, err := conn.Write(chunk.GetData()); err != nil {
-				log.Println("grpc -> upstream conn write error", err)
-				return
+				return err
 			}
 		}
-	}()
+	})
 
 	// upstream -> grpc
-	go func() {
+	eg.Go(func() error {
 		b := make([]byte, bufferSize)
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("upstream -> grpc ctx error", ctx.Err())
-				return
+				return ctx.Err()
 			default:
 			}
 
 			n, err := conn.Read(b)
 			if err != nil {
 				if err == io.EOF {
-					log.Println("closed tcp down stream", err)
-					return
+					return nil
 				}
-				log.Println("upstream -> grpc error", err)
-				return
+				return err
 			}
 
 			err = ss.Send(&proto.Chunk{
 				Data: b[:n],
 			})
 			if err == io.EOF {
-				log.Println("closed gRPC (upstream -> grpc)", err)
-				return
+				return nil
 			}
 			if err != nil {
-				log.Println("upstream -> grpc error", err)
-				return
+				return err
 			}
 		}
-	}()
-
-	return nil
+	})
+	return eg.Wait()
 }
