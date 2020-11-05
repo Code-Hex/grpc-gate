@@ -5,13 +5,19 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	gate "github.com/Code-Hex/grpc-gate"
 	"github.com/go-sql-driver/mysql"
+	"google.golang.org/grpc"
 )
 
 func main() {
-	dialer, err := gate.NewDialer("127.0.0.1", 4000)
+	dialer, err := gate.NewDialer("127.0.0.1:4000",
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+		grpc.WithTimeout(10*time.Second),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,9 +30,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("open failed: %v", err)
 	}
-	rows, err := db.Query("SELECT * FROM time_zone")
-	if err != nil {
-		log.Fatalf(err.Error())
+
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
 	}
-	fmt.Printf("result: %v\n", rows)
+	var (
+		timeZoneID     string
+		useLeapSeconds string
+	)
+	row := db.QueryRow("SELECT * FROM time_zone WHERE Time_zone_id = 1")
+	if err := row.Scan(&timeZoneID, &useLeapSeconds); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("result: %q, %q\n", timeZoneID, useLeapSeconds)
+
+	db.Close()
 }

@@ -36,7 +36,8 @@ func run(ctx context.Context) error {
 	}()
 	select {
 	case <-c:
-		srv.GracefulStop()
+		log.Println("shutdown...")
+		srv.Stop()
 	}
 	return nil
 }
